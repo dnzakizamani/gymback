@@ -1,0 +1,168 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USERS & AUTH
+// ============================================================================
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password_hash String
+  fullName  String?
+  isAdmin   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userExercises   UserExercise[]
+  workoutSessions WorkoutSession[]
+
+  @@map("users")
+}
+
+// ============================================================================
+// MASTER DATA - EQUIPMENT
+// ============================================================================
+model Equipment {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  exercises Exercise[]
+
+  @@map("equipment")
+}
+
+// ============================================================================
+// MASTER DATA - MUSCLE GROUPS
+// ============================================================================
+model MuscleGroup {
+  id       String   @id @default(cuid())
+  name     String   @unique
+  category String? // 'push', 'pull', 'legs', 'core'
+  createdAt DateTime @default(now())
+
+  // Relations
+  exerciseMuscles ExerciseMuscle[]
+
+  @@map("muscle_groups")
+}
+
+// ============================================================================
+// MASTER DATA - EXERCISES
+// ============================================================================
+model Exercise {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  imageUrl      String?
+  equipmentId   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  equipment       Equipment @relation(fields: [equipmentId], references: [id])
+  exerciseMuscles ExerciseMuscle[]
+  userExercises   UserExercise[]
+
+  @@index([equipmentId])
+  @@map("exercises")
+}
+
+// ============================================================================
+// EXERCISE-MUSCLE RELATIONSHIP (Many-to-Many)
+// ============================================================================
+model ExerciseMuscle {
+  id            String   @id @default(cuid())
+  exerciseId    String
+  muscleGroupId String
+  isPrimary     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  // Relations
+  exercise    Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  muscleGroup MuscleGroup @relation(fields: [muscleGroupId], references: [id])
+
+  @@unique([exerciseId, muscleGroupId])
+  @@index([exerciseId])
+  @@index([muscleGroupId])
+  @@map("exercise_muscles")
+}
+
+// ============================================================================
+// USER EXERCISES (User's saved exercises)
+// ============================================================================
+model UserExercise {
+  id          String   @id @default(cuid())
+  userId      String
+  exerciseId  String
+  customName  String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise          Exercise          @relation(fields: [exerciseId], references: [id])
+  workoutSessions   WorkoutSession[]
+
+  @@unique([userId, exerciseId])
+  @@index([userId])
+  @@index([exerciseId])
+  @@map("user_exercises")
+}
+
+// ============================================================================
+// WORKOUT SESSIONS
+// ============================================================================
+model WorkoutSession {
+  id             String   @id @default(cuid())
+  userId         String
+  userExerciseId String
+  workoutDate    DateTime @db.Date
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userExercise UserExercise @relation(fields: [userExerciseId], references: [id], onDelete: Cascade)
+  sets         WorkoutSet[]
+
+  @@index([userId])
+  @@index([userExerciseId])
+  @@index([workoutDate])
+  @@index([userId, workoutDate])
+  @@map("workout_sessions")
+}
+
+// ============================================================================
+// WORKOUT SETS
+// ============================================================================
+model WorkoutSet {
+  id        String   @id @default(cuid())
+  sessionId String
+  setNumber Int
+  weight    Decimal  @db.Decimal(8, 2)
+  reps      Int
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  session WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("workout_sets")
+}

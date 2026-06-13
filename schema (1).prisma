@@ -1,0 +1,250 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USERS & AUTH
+// ============================================================================
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password_hash String
+  fullName  String?
+  isAdmin   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userExercises   UserExercise[]
+  workoutSessions WorkoutSession[]
+
+  @@map("users")
+}
+
+// ============================================================================
+// MASTER DATA - EQUIPMENT
+// ============================================================================
+model Equipment {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  exercises Exercise[]
+
+  @@map("equipment")
+}
+
+// ============================================================================
+// MASTER DATA - MUSCLE GROUPS
+// ============================================================================
+model MuscleGroup {
+  id       String   @id @default(cuid())
+  name     String   @unique
+  category String? // 'push', 'pull', 'legs', 'core'
+  createdAt DateTime @default(now())
+
+  // Relations
+  exerciseMuscles ExerciseMuscle[]
+
+  @@map("muscle_groups")
+}
+
+// ============================================================================
+// MASTER DATA - EXERCISES
+// ============================================================================
+// Admin-managed exercise database
+// Contoh: "Lat Pulldown Wide", "Lat Pulldown Close", "Lat Pulldown V-Handle"
+// adalah 3 exercises terpisah
+model Exercise {
+  id            String   @id @default(cuid())
+  name          String   // "Lat Pulldown Wide Grip"
+  description   String?
+  imageUrl      String?
+  equipmentId   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  equipment       Equipment @relation(fields: [equipmentId], references: [id])
+  exerciseMuscles ExerciseMuscle[]
+  userExercises   UserExercise[]
+  workoutSessions WorkoutSession[]
+
+  @@index([equipmentId])
+  @@map("exercises")
+}
+
+// ============================================================================
+// EXERCISE-MUSCLE RELATIONSHIP (Many-to-Many)
+// ============================================================================
+// Satu exercise bisa target multiple muscle groups
+// Primary muscle (isPrimary=true) dan secondary muscle (isPrimary=false)
+model ExerciseMuscle {
+  id            String   @id @default(cuid())
+  exerciseId    String
+  muscleGroupId String
+  isPrimary     Boolean  @default(true) // primary vs secondary muscle
+  createdAt     DateTime @default(now())
+
+  // Relations
+  exercise    Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  muscleGroup MuscleGroup @relation(fields: [muscleGroupId], references: [id])
+
+  @@unique([exerciseId, muscleGroupId])
+  @@index([exerciseId])
+  @@index([muscleGroupId])
+  @@map("exercise_muscles")
+}
+
+// ============================================================================
+// USER EXERCISES (User's saved exercises)
+// ============================================================================
+// User memilih exercise dari master dan save ke profil mereka
+// Bisa customize nama kalau mau, tapi reference ke master exercise
+model UserExercise {
+  id          String   @id @default(cuid())
+  userId      String
+  exerciseId  String
+  customName  String?  // Optional: jika user mau ubah nama
+  notes       String?  // Form notes, cues, dll
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise          Exercise          @relation(fields: [exerciseId], references: [id])
+  workoutSessions   WorkoutSession[]
+
+  // User tidak boleh add exercise yang sama 2x
+  @@unique([userId, exerciseId])
+  @@index([userId])
+  @@index([exerciseId])
+  @@map("user_exercises")
+}
+
+// ============================================================================
+// WORKOUT SESSIONS
+// ============================================================================
+// Satu session = satu kali workout untuk satu exercise
+model WorkoutSession {
+  id             String   @id @default(cuid())
+  userId         String
+  userExerciseId String
+  workoutDate    DateTime @db.Date // YYYY-MM-DD format
+  notes          String?  // Overall session notes
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userExercise UserExercise @relation(fields: [userExerciseId], references: [id], onDelete: Cascade)
+  exercise     Exercise @relation(fields: [exerciseId], references: [id])
+  sets         WorkoutSet[]
+
+  exerciseId String? // Denormalized for query performance
+
+  @@index([userId])
+  @@index([userExerciseId])
+  @@index([workoutDate])
+  @@index([userId, workoutDate])
+  @@map("workout_sessions")
+}
+
+// ============================================================================
+// WORKOUT SETS
+// ============================================================================
+// Setiap set dalam satu session
+model WorkoutSet {
+  id        String   @id @default(cuid())
+  sessionId String
+  setNumber Int      // 1, 2, 3, dst
+  weight    Decimal  @db.Decimal(8, 2) // kg
+  reps      Int
+  notes     String?  // Optional notes per set (form, difficulty, dll)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  session WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("workout_sets")
+}
+
+// ============================================================================
+// USEFUL QUERY PATTERNS
+// ============================================================================
+/*
+
+1. Get user's exercises dengan info lengkap
+   const exercises = await prisma.userExercise.findMany({
+     where: { userId: "user123" },
+     include: {
+       exercise: {
+         include: {
+           equipment: true,
+           exerciseMuscles: {
+             include: { muscleGroup: true }
+           }
+         }
+       }
+     }
+   });
+
+2. Get workout history for specific user exercise
+   const history = await prisma.workoutSession.findMany({
+     where: { userExerciseId: "ue123" },
+     include: { sets: { orderBy: { setNumber: "asc" } } },
+     orderBy: { workoutDate: "desc" }
+   });
+
+3. Get PR (Personal Record) for exercise
+   const maxWeight = await prisma.workoutSet.aggregate({
+     where: {
+       session: { userExerciseId: "ue123" }
+     },
+     _max: { weight: true }
+   });
+
+4. Get last session date for user exercise
+   const lastSession = await prisma.workoutSession.findFirst({
+     where: { userExerciseId: "ue123" },
+     orderBy: { workoutDate: "desc" }
+   });
+
+5. Get all exercises by muscle group
+   const backExercises = await prisma.exercise.findMany({
+     where: {
+       exerciseMuscles: {
+         some: {
+           muscleGroup: { name: "Back" },
+           isPrimary: true
+         }
+       }
+     },
+     include: {
+       equipment: true,
+       exerciseMuscles: { include: { muscleGroup: true } }
+     }
+   });
+
+6. Get user's total volume for exercise (sum of weight × reps)
+   const sets = await prisma.workoutSet.findMany({
+     where: {
+       session: { userExerciseId: "ue123" }
+     },
+     select: { weight: true, reps: true }
+   });
+   // Calculate in app: sum(weight * reps)
+
+*/
