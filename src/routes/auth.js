@@ -6,6 +6,7 @@ import { validate } from '../middleware/validate.js';
 
 const router = Router();
 
+// Authentication routes
 router.post(
   '/register',
   [
@@ -27,6 +28,11 @@ router.post(
   authController.login
 );
 
+// Google OAuth routes
+router.get('/google', authController.getGoogleAuthUrl);
+router.get('/google/callback', authController.handleGoogleCallback);
+
+// Protected routes
 router.post('/logout', authenticate, authController.logout);
 router.get('/me', authenticate, authController.getMe);
 router.put('/profile', authenticate, authController.updateProfile);

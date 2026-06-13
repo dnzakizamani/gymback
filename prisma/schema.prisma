@@ -16,9 +16,11 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  password_hash String
+  password_hash String?
   fullName  String?
   isAdmin   Boolean  @default(false)
+  googleId  String?  @unique
+  avatarUrl String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
