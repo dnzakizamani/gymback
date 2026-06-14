@@ -11,9 +11,8 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Generate Prisma client and push schema
+# Generate Prisma client only (no db push at build time)
 RUN npx prisma generate
-RUN npx prisma db push --skip-generate
 
 # Expose port
 EXPOSE 8050
@@ -22,5 +21,5 @@ EXPOSE 8050
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8050/health || exit 1
 
-# Start application
-CMD ["node", "src/app.js"]
+# Start application (prisma db push at runtime)
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node src/app.js"]
