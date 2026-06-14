@@ -7,8 +7,14 @@ import prisma from './config/database.js';
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// CORS configuration for Google OAuth
+app.use(cors({
+  origin: config.google.frontendUrl,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 // Health check
