@@ -158,99 +158,99 @@ export const getWorkoutFrequency = async (userId) => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  // This week (starting Monday)
   const dayOfWeek = today.getDay();
   const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
   const weekStart = new Date(today);
   weekStart.setDate(today.getDate() + mondayOffset);
   weekStart.setHours(0, 0, 0, 0);
 
-  // This month
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-
-  // This year
   const yearStart = new Date(today.getFullYear(), 0, 1);
 
-  const [thisWeekSessions, thisMonthSessions, thisYearSessions] = await Promise.all([
-    prisma.workoutSession.groupBy({
-      by: ['workoutDate'],
-      where: {
-        userId,
-        workoutDate: { gte: weekStart, lte: today }
-      }
-    }),
-    prisma.workoutSession.groupBy({
-      by: ['workoutDate'],
-      where: {
-        userId,
-        workoutDate: { gte: monthStart, lte: today }
-      }
-    }),
-    prisma.workoutSession.groupBy({
-      by: ['workoutDate'],
-      where: {
-        userId,
-        workoutDate: { gte: yearStart, lte: today }
-      }
-    })
-  ]);
+  const sessions = await prisma.workoutSession.findMany({
+    where: {
+      userId,
+      workoutDate: { gte: yearStart, lte: today } // cukup ambil max range
+    },
+    select: {
+      workoutDate: true
+    }
+  });
+
+  // helper: normalize ke YYYY-MM-DD
+  const toDateKey = (d) => {
+    const date = new Date(d);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
+  const uniqueDays = new Set(
+    sessions.map(s => toDateKey(s.workoutDate))
+  );
+
+  let week = 0;
+  let month = 0;
+  let year = 0;
+
+  for (const dateStr of uniqueDays) {
+    const date = new Date(dateStr);
+
+    if (date >= weekStart) week++;
+    if (date >= monthStart) month++;
+    if (date >= yearStart) year++;
+  }
 
   return {
-    thisWeek: thisWeekSessions.length,
-    thisMonth: thisMonthSessions.length,
-    thisYear: thisYearSessions.length
+    thisWeek: week,
+    thisMonth: month,
+    thisYear: year
   };
 };
 
 export const getWeeklyFrequency = async (userId) => {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  // Get the Monday of current week
-  const dayOfWeek = today.getDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const weekStart = new Date(today);
-  weekStart.setDate(today.getDate() + mondayOffset);
-
-  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-  // Get start and end of week in UTC to match database
-  const weekStartUTC = new Date(Date.UTC(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate(), 0, 0, 0, 0));
-  const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999));
-
-  const sessions = await prisma.workoutSession.groupBy({
-    by: ['workoutDate'],
-    where: {
-      userId,
-      workoutDate: {
-        gte: weekStartUTC,
-        lte: todayUTC
-      }
+  const sessions = await prisma.workoutSession.findMany({
+    where: { userId },
+    select: {
+      workoutDate: true
     }
   });
 
-  // Convert workoutDate to YYYY-MM-DD strings for comparison
-  const sessionDates = sessions.map(s => {
-    const d = new Date(s.workoutDate);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-  });
+  // simpan tanggal unik + hari
+  const uniqueDays = new Set();
 
-  const days = dayNames.map((day, index) => {
-    const checkDate = new Date(weekStartUTC);
-    checkDate.setUTCDate(weekStart.getDate() + index);
-    const checkDateStr = `${checkDate.getUTCFullYear()}-${String(checkDate.getUTCMonth() + 1).padStart(2, '0')}-${String(checkDate.getUTCDate()).padStart(2, '0')}`;
+  for (const s of sessions) {
+    const date = new Date(s.workoutDate);
 
-    const count = sessionDates.filter(sessionDate => sessionDate === checkDateStr).length;
+    // ambil tanggal saja (YYYY-MM-DD)
+    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
-    return { day, count };
-  });
+    // gabungkan dengan hari biar unik per hari
+    uniqueDays.add(dateKey);
+  }
 
-  const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
-
-  return {
-    weekStart: weekStartStr,
-    days
+  // reset counter
+  const dayCount = {
+    Sun: 0,
+    Mon: 0,
+    Tue: 0,
+    Wed: 0,
+    Thu: 0,
+    Fri: 0,
+    Sat: 0
   };
+
+  for (const dateStr of uniqueDays) {
+    const date = new Date(dateStr);
+    const day = dayNames[date.getDay()];
+    dayCount[day]++;
+  }
+
+  return dayNames.map(day => ({
+    day,
+    count: dayCount[day]
+  }));
 };
 
 export const getMuscleDistribution = async (userId) => {
