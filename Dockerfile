@@ -22,4 +22,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8050/health || exit 1
 
 # Start application (prisma db push at runtime)
-# CMD ["sh", "-c", "npx prisma db push --skip-generate && node src/app.js"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node src/app.js"]
