@@ -229,3 +229,96 @@ export const deleteWorkout = async (userId, workoutId) => {
 
   return true;
 };
+
+export const getWorkoutDaysForMonth = async (userId, year, month) => {
+  // Calculate start and end dates for the month
+  const startDate = new Date(Date.UTC(year, month - 1, 1));
+  const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+
+  const workouts = await prisma.workoutSession.findMany({
+    where: {
+      userId,
+      workoutDate: {
+        gte: startDate,
+        lte: endDate
+      }
+    },
+    select: {
+      workoutDate: true
+    },
+    orderBy: {
+      workoutDate: 'asc'
+    }
+  });
+
+  // Extract unique day numbers
+  const days = [...new Set(workouts.map(w => w.workoutDate.getUTCDate()))];
+
+  return days;
+};
+
+export const getWorkoutsByDate = async (userId, date) => {
+  const targetDate = new Date(date);
+  const startOfDay = new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()));
+  const endOfDay = new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999));
+
+  const workouts = await prisma.workoutSession.findMany({
+    where: {
+      userId,
+      workoutDate: {
+        gte: startOfDay,
+        lte: endOfDay
+      }
+    },
+    include: {
+      userExercise: {
+        include: {
+          exercise: {
+            include: {
+              equipment: true,
+              exerciseMuscles: {
+                include: {
+                  muscleGroup: true
+                }
+              }
+            }
+          }
+        }
+      },
+      sets: {
+        orderBy: { setNumber: 'asc' }
+      }
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+
+  const formattedWorkouts = workouts.map(w => {
+    // Get primary and secondary muscles
+    const muscles = w.userExercise.exercise.exerciseMuscles;
+    const primaryMuscle = muscles.find(m => m.isPrimary)?.muscleGroup?.name || null;
+    const secondaryMuscle = muscles.find(m => !m.isPrimary)?.muscleGroup?.name || null;
+
+    return {
+      id: w.id,
+      userExerciseId: w.userExerciseId,
+      exerciseName: w.userExercise.customName || w.userExercise.exercise.name,
+      equipment: w.userExercise.exercise.equipment?.name || null,
+      primaryMuscle,
+      secondaryMuscle,
+      workoutDate: w.workoutDate.toISOString().split('T')[0],
+      notes: w.notes,
+      createdAt: w.createdAt,
+      sets: w.sets.map(s => ({
+        id: s.id,
+        setNumber: s.setNumber,
+        weight: parseFloat(s.weight),
+        reps: s.reps,
+        notes: s.notes
+      }))
+    };
+  });
+
+  return formattedWorkouts;
+};

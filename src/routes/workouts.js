@@ -8,6 +8,9 @@ const router = Router();
 
 router.use(authenticate);
 
+// Calendar and by-date routes must come before /:id to avoid conflict
+router.get('/calendar', workoutController.getWorkoutCalendar);
+router.get('/by-date', workoutController.getWorkoutsByDate);
 router.get('/', workoutController.getWorkouts);
 router.get('/:id', workoutController.getWorkoutById);
 
